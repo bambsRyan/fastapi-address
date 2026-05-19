@@ -1,7 +1,11 @@
+import logging
+
 from geopy.distance import geodesic
 from sqlmodel import Session, select
 
 from app.models.address import Address, AddressCreate, AddressUpdate
+
+logger = logging.getLogger(__name__)
 
 
 def create(db: Session, address: AddressCreate) -> Address:
@@ -10,6 +14,7 @@ def create(db: Session, address: AddressCreate) -> Address:
     db.add(db_address)
     db.commit()
     db.refresh(db_address)
+    logger.info(f"Address created: id={db_address.id} name='{db_address.name}'")
     return db_address
 
 
@@ -52,12 +57,18 @@ def search(
     addresses = db.exec(query).all()
 
     if latitude is not None and longitude is not None and radius_km is not None:
+        before = len(addresses)
         addresses = [
             a for a in addresses
             if geodesic((latitude, longitude), (a.latitude, a.longitude)).km <= radius_km
         ]
+        logger.info(
+            f"Proximity filter: {len(addresses)}/{before} addresses within "
+            f"{radius_km}km of ({latitude}, {longitude})"
+        )
 
     total = len(addresses)
+    logger.info(f"Search returned {total} result(s) (sort={sort_by} {sort_order}, skip={skip}, limit={limit})")
     return addresses[skip: skip + limit], total
 
 
@@ -69,11 +80,14 @@ def update(db: Session, address_id: int, address: AddressUpdate) -> Address | No
     """
     db_address = db.get(Address, address_id)
     if not db_address:
+        logger.warning(f"Update failed: address id={address_id} not found")
         return None
-    for key, value in address.model_dump(exclude_unset=True).items():
+    fields = address.model_dump(exclude_unset=True)
+    for key, value in fields.items():
         setattr(db_address, key, value)
     db.commit()
     db.refresh(db_address)
+    logger.info(f"Address updated: id={address_id} fields={list(fields.keys())}")
     return db_address
 
 
@@ -81,7 +95,9 @@ def delete(db: Session, address_id: int) -> bool:
     """Delete an address by id. Returns True if deleted, False if not found."""
     db_address = db.get(Address, address_id)
     if not db_address:
+        logger.warning(f"Delete failed: address id={address_id} not found")
         return False
     db.delete(db_address)
     db.commit()
+    logger.info(f"Address deleted: id={address_id}")
     return True
