@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session
 
 from app.database import get_db
-from app.models.address import AddressCreate, AddressPage, AddressRead
+from app.models.address import AddressCreate, AddressPage, AddressRead, AddressUpdate
 from app.services import address as address_service
 
 router = APIRouter(prefix="/addresses", tags=["addresses"])
@@ -66,10 +66,10 @@ def list_addresses(
 
 
 @router.patch("/{address_id}", response_model=AddressRead)
-def update_address(address_id: int, address: AddressCreate, db: Session = Depends(get_db)):
-    """Replace all fields on an existing address.
+def update_address(address_id: int, address: AddressUpdate, db: Session = Depends(get_db)):
+    """Partially update an address — only the fields you send are changed.
 
-    Requires a full address body — all fields must be provided.
+    All fields are optional. Omitted fields keep their current value.
     Returns 404 if the address does not exist.
     """
     updated = address_service.update(db, address_id, address)

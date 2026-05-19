@@ -31,6 +31,17 @@ class AddressRead(AddressBase):
     id: int
 
 
+class AddressUpdate(SQLModel):
+    """Request body for partial address update. Only provided fields are changed."""
+
+    name: str | None = None
+    street: str | None = None
+    city: str | None = None
+    country: str | None = None
+    latitude: float | None = Field(default=None, ge=-90, le=90, description="Latitude (-90 to 90)")
+    longitude: float | None = Field(default=None, ge=-180, le=180, description="Longitude (-180 to 180)")
+
+
 class AddressPage(SQLModel):
     """Paginated response envelope for the address list endpoint."""
 

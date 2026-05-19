@@ -1,7 +1,7 @@
 from geopy.distance import geodesic
 from sqlmodel import Session, select
 
-from app.models.address import Address, AddressCreate
+from app.models.address import Address, AddressCreate, AddressUpdate
 
 
 def create(db: Session, address: AddressCreate) -> Address:
@@ -61,12 +61,16 @@ def search(
     return addresses[skip: skip + limit], total
 
 
-def update(db: Session, address_id: int, address: AddressCreate) -> Address | None:
-    """Replace all fields on an existing address. Returns None if not found."""
+def update(db: Session, address_id: int, address: AddressUpdate) -> Address | None:
+    """Partially update an existing address. Only fields included in the request are changed.
+
+    Uses exclude_unset=True so omitted fields are left as-is on the stored record.
+    Returns None if the address does not exist.
+    """
     db_address = db.get(Address, address_id)
     if not db_address:
         return None
-    for key, value in address.model_dump().items():
+    for key, value in address.model_dump(exclude_unset=True).items():
         setattr(db_address, key, value)
     db.commit()
     db.refresh(db_address)

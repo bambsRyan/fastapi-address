@@ -66,8 +66,18 @@ def test_proximity_search_partial_params_returns_422(client):
     assert response.status_code == 422
 
 
+def test_patch_updates_only_provided_fields(client):
+    created = client.post("/api/v1/addresses/", json=ADDRESS_PAYLOAD).json()
+    response = client.patch(f"/api/v1/addresses/{created['id']}", json={"city": "Cebu"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["city"] == "Cebu"
+    assert data["name"] == ADDRESS_PAYLOAD["name"]
+    assert data["street"] == ADDRESS_PAYLOAD["street"]
+
+
 def test_update_nonexistent_address_returns_404(client):
-    response = client.patch("/api/v1/addresses/999", json=ADDRESS_PAYLOAD)
+    response = client.patch("/api/v1/addresses/999", json={"city": "Cebu"})
     assert response.status_code == 404
     assert response.json()["detail"] == "Address not found"
 

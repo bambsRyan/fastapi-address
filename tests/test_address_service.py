@@ -146,17 +146,20 @@ def test_sort_by_name_desc(db: Session):
     assert results[1].name == "Alpha"
 
 
-def test_update_address(db: Session):
+def test_update_address_partial(db: Session):
+    from app.models.address import AddressUpdate
     created = address_service.create(db, ADDRESS_DATA)
-    updated_data = ADDRESS_DATA.model_copy(update={"name": "Office", "city": "Cebu"})
-    updated = address_service.update(db, created.id, updated_data)
+    updated = address_service.update(db, created.id, AddressUpdate(city="Cebu"))
     assert updated is not None
-    assert updated.name == "Office"
     assert updated.city == "Cebu"
+    assert updated.name == ADDRESS_DATA.name
+    assert updated.street == ADDRESS_DATA.street
+    assert updated.country == ADDRESS_DATA.country
 
 
 def test_update_address_not_found(db: Session):
-    result = address_service.update(db, 999, ADDRESS_DATA)
+    from app.models.address import AddressUpdate
+    result = address_service.update(db, 999, AddressUpdate(name="Ghost"))
     assert result is None
 
 
