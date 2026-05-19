@@ -4,7 +4,6 @@ from sqlmodel import Session
 from app.models.address import AddressCreate
 from app.services import address as address_service
 
-# Manila city hall — used as the base for proximity tests
 ADDRESS_DATA = AddressCreate(
     name="Home",
     street="123 Main St",
@@ -14,10 +13,7 @@ ADDRESS_DATA = AddressCreate(
     longitude=120.9842,
 )
 
-# ~158m away from ADDRESS_DATA
 NEARBY = ADDRESS_DATA.model_copy(update={"name": "Nearby", "latitude": 14.6007, "longitude": 120.9850})
-
-# New York — ~13,700km from Manila
 FAR_AWAY = ADDRESS_DATA.model_copy(update={"name": "Far Away", "latitude": 40.7128, "longitude": -74.0060})
 
 
@@ -31,87 +27,123 @@ def test_create_address(db: Session):
 def test_search_no_filters_returns_all(db: Session):
     address_service.create(db, ADDRESS_DATA)
     address_service.create(db, ADDRESS_DATA.model_copy(update={"name": "Office"}))
-    results = address_service.search(db)
+    results, total = address_service.search(db, limit=100)
+    assert total == 2
     assert len(results) == 2
 
 
 def test_search_by_name(db: Session):
     address_service.create(db, ADDRESS_DATA)
     address_service.create(db, ADDRESS_DATA.model_copy(update={"name": "Office"}))
-    results = address_service.search(db, name="off")
-    assert len(results) == 1
+    results, total = address_service.search(db, name="off")
+    assert total == 1
     assert results[0].name == "Office"
 
 
 def test_search_by_city(db: Session):
     address_service.create(db, ADDRESS_DATA)
     address_service.create(db, ADDRESS_DATA.model_copy(update={"name": "Office", "city": "Cebu"}))
-    results = address_service.search(db, city="cebu")
-    assert len(results) == 1
+    results, total = address_service.search(db, city="cebu")
+    assert total == 1
     assert results[0].city == "Cebu"
 
 
 def test_search_by_country(db: Session):
     address_service.create(db, ADDRESS_DATA)
     address_service.create(db, ADDRESS_DATA.model_copy(update={"name": "Office", "country": "Japan"}))
-    results = address_service.search(db, country="japan")
-    assert len(results) == 1
+    results, total = address_service.search(db, country="japan")
+    assert total == 1
     assert results[0].country == "Japan"
 
 
 def test_search_by_street(db: Session):
     address_service.create(db, ADDRESS_DATA)
     address_service.create(db, ADDRESS_DATA.model_copy(update={"name": "Office", "street": "456 Rizal Ave"}))
-    results = address_service.search(db, street="rizal")
-    assert len(results) == 1
+    results, total = address_service.search(db, street="rizal")
+    assert total == 1
     assert results[0].street == "456 Rizal Ave"
 
 
 def test_search_multiple_filters(db: Session):
     address_service.create(db, ADDRESS_DATA)
     address_service.create(db, ADDRESS_DATA.model_copy(update={"name": "Office", "city": "Cebu"}))
-    results = address_service.search(db, name="office", city="cebu")
-    assert len(results) == 1
+    results, total = address_service.search(db, name="office", city="cebu")
+    assert total == 1
     assert results[0].name == "Office"
 
 
 def test_search_no_match_returns_empty(db: Session):
     address_service.create(db, ADDRESS_DATA)
-    results = address_service.search(db, city="Tokyo")
+    results, total = address_service.search(db, city="Tokyo")
+    assert total == 0
     assert results == []
 
 
 def test_proximity_returns_addresses_within_radius(db: Session):
-    address_service.create(db, ADDRESS_DATA)   # Home — at center
-    address_service.create(db, NEARBY)          # ~158m away
-    address_service.create(db, FAR_AWAY)        # ~13,700km away
-    results = address_service.search(db, latitude=14.5995, longitude=120.9842, radius_km=1)
+    address_service.create(db, ADDRESS_DATA)
+    address_service.create(db, NEARBY)
+    address_service.create(db, FAR_AWAY)
+    results, total = address_service.search(db, latitude=14.5995, longitude=120.9842, radius_km=1, limit=100)
     names = {r.name for r in results}
+    assert total == 2
     assert "Home" in names
     assert "Nearby" in names
     assert "Far Away" not in names
 
 
 def test_proximity_excludes_addresses_outside_radius(db: Session):
-    address_service.create(db, ADDRESS_DATA)  # Home — at center
-    address_service.create(db, NEARBY)         # ~158m away
-    results = address_service.search(db, latitude=14.5995, longitude=120.9842, radius_km=0.1)
-    assert len(results) == 1
+    address_service.create(db, ADDRESS_DATA)
+    address_service.create(db, NEARBY)
+    results, total = address_service.search(db, latitude=14.5995, longitude=120.9842, radius_km=0.1)
+    assert total == 1
     assert results[0].name == "Home"
 
 
 def test_proximity_no_results_when_all_far(db: Session):
     address_service.create(db, ADDRESS_DATA)
-    results = address_service.search(db, latitude=40.7128, longitude=-74.0060, radius_km=1)
+    results, total = address_service.search(db, latitude=40.7128, longitude=-74.0060, radius_km=1)
+    assert total == 0
     assert results == []
 
 
 def test_proximity_combined_with_text_filter(db: Session):
-    address_service.create(db, ADDRESS_DATA)   # Home — within radius
-    address_service.create(db, NEARBY)          # Nearby — within radius
-    results = address_service.search(db, name="home", latitude=14.5995, longitude=120.9842, radius_km=1)
-    assert len(results) == 1
+    address_service.create(db, ADDRESS_DATA)
+    address_service.create(db, NEARBY)
+    results, total = address_service.search(db, name="home", latitude=14.5995, longitude=120.9842, radius_km=1)
+    assert total == 1
     assert results[0].name == "Home"
+
+
+def test_pagination_skip(db: Session):
+    for i in range(5):
+        address_service.create(db, ADDRESS_DATA.model_copy(update={"name": f"Address {i}"}))
+    results, total = address_service.search(db, skip=2, limit=2)
+    assert total == 5
+    assert len(results) == 2
+
+
+def test_pagination_limit(db: Session):
+    for i in range(5):
+        address_service.create(db, ADDRESS_DATA.model_copy(update={"name": f"Address {i}"}))
+    results, total = address_service.search(db, limit=3)
+    assert total == 5
+    assert len(results) == 3
+
+
+def test_sort_by_name_asc(db: Session):
+    address_service.create(db, ADDRESS_DATA.model_copy(update={"name": "Zebra"}))
+    address_service.create(db, ADDRESS_DATA.model_copy(update={"name": "Alpha"}))
+    results, _ = address_service.search(db, sort_by="name", sort_order="asc", limit=100)
+    assert results[0].name == "Alpha"
+    assert results[1].name == "Zebra"
+
+
+def test_sort_by_name_desc(db: Session):
+    address_service.create(db, ADDRESS_DATA.model_copy(update={"name": "Zebra"}))
+    address_service.create(db, ADDRESS_DATA.model_copy(update={"name": "Alpha"}))
+    results, _ = address_service.search(db, sort_by="name", sort_order="desc", limit=100)
+    assert results[0].name == "Zebra"
+    assert results[1].name == "Alpha"
 
 
 def test_update_address(db: Session):
@@ -132,7 +164,8 @@ def test_delete_address(db: Session):
     created = address_service.create(db, ADDRESS_DATA)
     deleted = address_service.delete(db, created.id)
     assert deleted is True
-    assert address_service.search(db, name=created.name) == []
+    results, total = address_service.search(db, name=created.name)
+    assert total == 0
 
 
 def test_delete_address_not_found(db: Session):

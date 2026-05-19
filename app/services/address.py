@@ -22,15 +22,24 @@ def search(
     latitude: float | None = None,
     longitude: float | None = None,
     radius_km: float | None = None,
-) -> list[Address]:
-    """Return addresses matching all provided filters.
+    sort_by: str = "id",
+    sort_order: str = "asc",
+    skip: int = 0,
+    limit: int = 10,
+) -> tuple[list[Address], int]:
+    """Return a paginated, sorted slice of addresses matching all provided filters.
 
-    Text filters (name, street, city, country) are case-insensitive partial
-    matches. Proximity filter (latitude, longitude, radius_km) must all be
-    supplied together; when present, only addresses within radius_km of the
-    given point are returned. Filters can be freely combined.
+    Text filters are case-insensitive partial matches. Proximity filter requires
+    latitude, longitude, and radius_km together. Sorting is applied at the database
+    level; proximity filtering and pagination are applied afterwards in Python so
+    that the total count reflects all matching records before slicing.
+
+    Returns a (items, total) tuple where total is the count before pagination.
     """
-    query = select(Address)
+    sort_col = getattr(Address, sort_by)
+    order = sort_col.asc() if sort_order == "asc" else sort_col.desc()
+
+    query = select(Address).order_by(order)
     if name:
         query = query.where(Address.name.ilike(f"%{name}%"))
     if street:
@@ -39,13 +48,17 @@ def search(
         query = query.where(Address.city.ilike(f"%{city}%"))
     if country:
         query = query.where(Address.country.ilike(f"%{country}%"))
+
     addresses = db.exec(query).all()
+
     if latitude is not None and longitude is not None and radius_km is not None:
         addresses = [
             a for a in addresses
             if geodesic((latitude, longitude), (a.latitude, a.longitude)).km <= radius_km
         ]
-    return addresses
+
+    total = len(addresses)
+    return addresses[skip: skip + limit], total
 
 
 def update(db: Session, address_id: int, address: AddressCreate) -> Address | None:

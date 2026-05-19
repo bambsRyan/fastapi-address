@@ -29,3 +29,12 @@ class AddressRead(AddressBase):
     """Response schema for address data. Always includes the id."""
 
     id: int
+
+
+class AddressPage(SQLModel):
+    """Paginated response envelope for the address list endpoint."""
+
+    total: int
+    skip: int
+    limit: int
+    data: list[AddressRead]

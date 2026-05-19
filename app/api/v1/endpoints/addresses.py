@@ -1,13 +1,16 @@
-from typing import Optional
+from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session
 
 from app.database import get_db
-from app.models.address import AddressCreate, AddressRead
+from app.models.address import AddressCreate, AddressPage, AddressRead
 from app.services import address as address_service
 
 router = APIRouter(prefix="/addresses", tags=["addresses"])
+
+SortField = Literal["id", "name", "street", "city", "country"]
+SortOrder = Literal["asc", "desc"]
 
 
 @router.post("/", response_model=AddressRead, status_code=201)
@@ -20,7 +23,7 @@ def create_address(address: AddressCreate, db: Session = Depends(get_db)):
     return address_service.create(db, address)
 
 
-@router.get("/", response_model=list[AddressRead])
+@router.get("/", response_model=AddressPage)
 def list_addresses(
     name: Optional[str] = None,
     street: Optional[str] = None,
@@ -29,22 +32,22 @@ def list_addresses(
     latitude: Optional[float] = None,
     longitude: Optional[float] = None,
     radius_km: Optional[float] = None,
+    sort_by: SortField = "id",
+    sort_order: SortOrder = "asc",
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=10, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
-    """Search addresses using optional query parameters.
+    """Search, sort, and paginate addresses.
 
     Text filters (name, street, city, country) are case-insensitive partial
     matches. Proximity search requires all three of latitude, longitude, and
-    radius_km — returns addresses within that radius (in km) of the given point.
-    All filters can be freely combined.
+    radius_km. All filters can be freely combined with sorting and pagination.
 
-    - **name**: partial match on address name
-    - **street**: partial match on street
-    - **city**: partial match on city
-    - **country**: partial match on country
-    - **latitude**: center point latitude for proximity search
-    - **longitude**: center point longitude for proximity search
-    - **radius_km**: search radius in kilometres
+    - **sort_by**: field to sort on — id, name, street, city, or country
+    - **sort_order**: asc (default) or desc
+    - **skip**: number of records to skip (for pagination)
+    - **limit**: max records to return, 1–100 (default 10)
     """
     proximity = [latitude, longitude, radius_km]
     if any(p is not None for p in proximity) and not all(p is not None for p in proximity):
@@ -52,10 +55,14 @@ def list_addresses(
             status_code=422,
             detail="latitude, longitude, and radius_km must all be provided together",
         )
-    return address_service.search(
-        db, name=name, street=street, city=city, country=country,
+    items, total = address_service.search(
+        db,
+        name=name, street=street, city=city, country=country,
         latitude=latitude, longitude=longitude, radius_km=radius_km,
+        sort_by=sort_by, sort_order=sort_order,
+        skip=skip, limit=limit,
     )
+    return AddressPage(total=total, skip=skip, limit=limit, data=items)
 
 
 @router.patch("/{address_id}", response_model=AddressRead)
