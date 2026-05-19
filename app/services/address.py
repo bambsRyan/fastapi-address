@@ -1,5 +1,4 @@
-import math
-
+from geopy.distance import geodesic
 from sqlmodel import Session, select
 
 from app.models.address import Address, AddressCreate
@@ -44,7 +43,7 @@ def search(
     if latitude is not None and longitude is not None and radius_km is not None:
         addresses = [
             a for a in addresses
-            if _haversine(latitude, longitude, a.latitude, a.longitude) <= radius_km
+            if geodesic((latitude, longitude), (a.latitude, a.longitude)).km <= radius_km
         ]
     return addresses
 
@@ -69,13 +68,3 @@ def delete(db: Session, address_id: int) -> bool:
     db.delete(db_address)
     db.commit()
     return True
-
-
-def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """Return the great-circle distance in km between two lat/lng points."""
-    R = 6371.0
-    dlat = math.radians(lat2 - lat1)
-    dlon = math.radians(lon2 - lon1)
-    a = (math.sin(dlat / 2) ** 2
-         + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2)
-    return R * 2 * math.asin(math.sqrt(a))
