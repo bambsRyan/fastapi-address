@@ -40,3 +40,27 @@ def test_proximity_search_returns_results(client):
 def test_proximity_search_partial_params_returns_422(client):
     response = client.get("/api/v1/addresses/", params={"latitude": 14.5995, "radius_km": 1})
     assert response.status_code == 422
+
+
+def test_update_nonexistent_address_returns_404(client):
+    response = client.patch("/api/v1/addresses/999", json=ADDRESS_PAYLOAD)
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Address not found"
+
+
+def test_delete_nonexistent_address_returns_404(client):
+    response = client.delete("/api/v1/addresses/999")
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Address not found"
+
+
+def test_unhandled_exception_returns_500(client, monkeypatch):
+    from app.services import address as address_service
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("Simulated unexpected failure")
+
+    monkeypatch.setattr(address_service, "create", boom)
+    response = client.post("/api/v1/addresses/", json=ADDRESS_PAYLOAD)
+    assert response.status_code == 500
+    assert response.json()["detail"] == "Internal server error"

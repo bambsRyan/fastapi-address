@@ -1,8 +1,11 @@
 import os
 import logging
-from sqlmodel import SQLModel
-from fastapi import FastAPI, Request
 import time
+
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
+from sqlmodel import SQLModel
+
 from .database import engine
 from .api.v1.router import router as api_router
 
@@ -23,9 +26,20 @@ app.include_router(api_router)
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    """Log the method, path, status code, and duration of every HTTP request."""
+    """Log every request. Catches unhandled exceptions so internals are never leaked."""
     start = time.perf_counter()
-    response = await call_next(request)
+    try:
+        response = await call_next(request)
+    except Exception as exc:
+        logger.error(f"Unhandled error on {request.method} {request.url.path}", exc_info=exc)
+        return JSONResponse(status_code=500, content={"detail": "Internal server error"})
     duration = (time.perf_counter() - start) * 1000
     logger.info(f"{request.method} {request.url.path} - {response.status_code} ({duration:.1f}ms)")
     return response
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """Log expected HTTP errors (4xx/5xx) and return the standard error response."""
+    logger.warning(f"{request.method} {request.url.path} - {exc.status_code}: {exc.detail}")
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
