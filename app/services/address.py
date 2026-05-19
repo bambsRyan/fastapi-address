@@ -1,3 +1,5 @@
+import math
+
 from sqlmodel import Session, select
 
 from app.models.address import Address, AddressCreate
@@ -18,12 +20,16 @@ def search(
     street: str | None = None,
     city: str | None = None,
     country: str | None = None,
+    latitude: float | None = None,
+    longitude: float | None = None,
+    radius_km: float | None = None,
 ) -> list[Address]:
     """Return addresses matching all provided filters.
 
-    Each filter is a case-insensitive partial match. Omitting a filter
-    means that field is not constrained. Returns all records when no
-    filters are provided.
+    Text filters (name, street, city, country) are case-insensitive partial
+    matches. Proximity filter (latitude, longitude, radius_km) must all be
+    supplied together; when present, only addresses within radius_km of the
+    given point are returned. Filters can be freely combined.
     """
     query = select(Address)
     if name:
@@ -34,7 +40,13 @@ def search(
         query = query.where(Address.city.ilike(f"%{city}%"))
     if country:
         query = query.where(Address.country.ilike(f"%{country}%"))
-    return db.exec(query).all()
+    addresses = db.exec(query).all()
+    if latitude is not None and longitude is not None and radius_km is not None:
+        addresses = [
+            a for a in addresses
+            if _haversine(latitude, longitude, a.latitude, a.longitude) <= radius_km
+        ]
+    return addresses
 
 
 def update(db: Session, address_id: int, address: AddressCreate) -> Address | None:
@@ -57,3 +69,13 @@ def delete(db: Session, address_id: int) -> bool:
     db.delete(db_address)
     db.commit()
     return True
+
+
+def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Return the great-circle distance in km between two lat/lng points."""
+    R = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = (math.sin(dlat / 2) ** 2
+         + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2)
+    return R * 2 * math.asin(math.sqrt(a))

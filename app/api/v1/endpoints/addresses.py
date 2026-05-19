@@ -26,19 +26,36 @@ def list_addresses(
     street: Optional[str] = None,
     city: Optional[str] = None,
     country: Optional[str] = None,
+    latitude: Optional[float] = None,
+    longitude: Optional[float] = None,
+    radius_km: Optional[float] = None,
     db: Session = Depends(get_db),
 ):
     """Search addresses using optional query parameters.
 
-    All filters are case-insensitive partial matches and can be combined.
-    Omitting all filters returns every address in the database.
+    Text filters (name, street, city, country) are case-insensitive partial
+    matches. Proximity search requires all three of latitude, longitude, and
+    radius_km — returns addresses within that radius (in km) of the given point.
+    All filters can be freely combined.
 
     - **name**: partial match on address name
     - **street**: partial match on street
     - **city**: partial match on city
     - **country**: partial match on country
+    - **latitude**: center point latitude for proximity search
+    - **longitude**: center point longitude for proximity search
+    - **radius_km**: search radius in kilometres
     """
-    return address_service.search(db, name=name, street=street, city=city, country=country)
+    proximity = [latitude, longitude, radius_km]
+    if any(p is not None for p in proximity) and not all(p is not None for p in proximity):
+        raise HTTPException(
+            status_code=422,
+            detail="latitude, longitude, and radius_km must all be provided together",
+        )
+    return address_service.search(
+        db, name=name, street=street, city=city, country=country,
+        latitude=latitude, longitude=longitude, radius_km=radius_km,
+    )
 
 
 @router.patch("/{address_id}", response_model=AddressRead)
